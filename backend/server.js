@@ -2,53 +2,89 @@ const { Server } = require("socket.io");
 const { v4: uuidv4 } = require("uuid");
 
 const io = new Server({
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    }
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
 });
 
-// spel-logik
-    // skapa själva boxens data
+// Spel-logik
+// Skapa själva boxens state
 const initialBox = () => {
-    return {
-        id: uuidv4(),
-        color: "#f3f3f3",
-        lastChangedBy: "server"
-    }
-}
+  return {
+    id: uuidv4(),
+    color: "#f3f3f3",
+    lastChangedBy: "server",
+  };
+};
 
-const initialState = () => 
-    new Array(20).fill("").map(() => {
-        return new Array(20).fill("").map(initialBox)
-})
+const initialState = () =>
+  new Array(20).fill("").map(() => {
+    return new Array(20).fill("").map(initialBox);
+  });
 
-let state = initialState();
+const rooms = {
+  default: {
+    name: "Default room",
+    state: initialState(),
+  },
+};
 
-// socket listeners
-
+// Socket listeners
 io.on("connection", (socket) => {
-    socket.on("ready", () => {
-        socket.emit("initial_state", state)
-    })
+  // Event: "ready"
+  socket.on("ready", () => {
+    // Sätt användarens rum till default
+    socket.join("default");
 
-    socket.on("update", (data) => {
-       const color = data.color;
-       const { x, y } = data.position;
-       const user = socket.id;
+    socket.emit("initial_state", rooms["default"].state);
+  });
 
-       state[y][x] = {
-        id: state[y][x].id, //nuvarande id på rutan
-        color: color,
-        lastChangedBy: user
+  // room = "potatislandet"
+  socket.on("create_room", (room) => {
+    rooms[room] = {
+      name: room,
+      state: initialState()
+    }
 
-       }
+    console.log(rooms);
+  })
 
-       io.emit("updated_state", state);
+  socket.on("join_room", (room) => {
+    //["socket.id", "default"]
+    const joinedRooms = Array.from(socket.rooms);
+    const roomToLeave = joinedRooms[1]; // "default"
+    socket.leave(roomToLeave)
 
-    })
+    // Gå med i nya rummet 
+    socket.join(room);
+    io.to(room).emit("updated_state", rooms[room].state);
+    console.log(`${socket.id} joined room: ${room}`);
+  });
 
+  // Event: "update"
+  socket.on("update", (data) => {
+    const joinedRooms = Array.from(socket.rooms);
+    const currentRoom = joinedRooms[1]; // FEA21
+    const currentState = rooms[currentRoom].state;
 
-})
+    const color = data.color;
+    const { x, y } = data.position;
+    const user = socket.id;
+
+    currentState[y][x] = {
+      id: currentState[y][x].id, // Nuvarande id't på rutan
+      color: color,
+      lastChangedBy: user,
+    };
+
+    io.to(currentRoom).emit("updated_state", currentState);
+  });
+});
 
 io.listen(4000);
+console.log("Servern kör på port 4000");
+
+
+
+io.to("default").emit("new_message", { id: "1", message: "Hej", to: "default" })
